@@ -1,5 +1,4 @@
-<<<<<<< HEAD
-freecoin official development tree
+
 
 freecoin - a hybrid scrypt PoW + PoS based cryptocurrency, forked from yacoin, with many new features and bug fixes
 
