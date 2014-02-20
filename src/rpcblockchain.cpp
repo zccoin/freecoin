@@ -1,5 +1,6 @@
 // Copyright (c) 2010 Satoshi Nakamoto
 // Copyright (c) 2009-2012 The Freecoin developers
+// Copyright (c) 2013-2014 The ZcCoin developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -161,7 +162,7 @@ Value getblockhash(const Array& params, bool fHelp)
         throw runtime_error("Block number out of range.");
 
     CBlockIndex* pblockindex = FindBlockByHeight(nHeight);
-    return pblockindex->phashBlock->GetHex();
+    return pblockindex->GetHash().GetHex();
 }
 
 Value getblock(const Array& params, bool fHelp)
@@ -202,7 +203,7 @@ Value getblockbynumber(const Array& params, bool fHelp)
     while (pblockindex->nHeight > nHeight)
         pblockindex = pblockindex->pprev;
 
-    uint256 hash = *pblockindex->phashBlock;
+    uint256 hash = pblockindex->GetHash();
 
     pblockindex = mapBlockIndex[hash];
     block.ReadFromDisk(pblockindex, true);

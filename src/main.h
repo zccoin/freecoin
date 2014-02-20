@@ -1,5 +1,6 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
 // Copyright (c) 2009-2012 The Freecoin developers
+// Copyright (c) 2013-2014 The ZcCoin developers
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 #ifndef BITCOIN_MAIN_H
@@ -24,6 +25,9 @@ class CAddress;
 class CInv;
 class CRequestTracker;
 class CNode;
+
+// block height where "no consecutive PoS blocks" rule activates
+static const int nConsecutiveStakeSwitchHeight = 370000;
 
 static const unsigned int MAX_BLOCK_SIZE = 1000000;
 static const unsigned int MAX_BLOCK_SIZE_GEN = MAX_BLOCK_SIZE/2;
@@ -817,7 +821,78 @@ public:
 };
 
 
+class CBlockHeader
+{
+public:
+    static const int CURRENT_VERSION=3;
+    int nVersion;
+    uint256 hashPrevBlock;
+    uint256 hashMerkleRoot;
+    unsigned int nTime;
+    unsigned int nBits;
+    unsigned int nNonce;
 
+    // memory only
+    mutable bool fHashed;
+    mutable uint256 hashCached;
+
+    CBlockHeader()
+    {
+        fHashed = false;
+        SetNull();
+    }
+
+    IMPLEMENT_SERIALIZE
+    (
+        READWRITE(this->nVersion);
+        nVersion = this->nVersion;
+        READWRITE(hashPrevBlock);
+        READWRITE(hashMerkleRoot);
+        READWRITE(nTime);
+        READWRITE(nBits);
+        READWRITE(nNonce);
+    )
+
+    void SetNull()
+    {
+        fHashed = false;
+        nVersion = CURRENT_VERSION;
+        hashPrevBlock = 0;
+        hashMerkleRoot = 0;
+        nTime = 0;
+        nBits = 0;
+        nNonce = 0;
+        fHashed = false;
+    }
+
+    void SetHash(uint256 h) const
+    {
+        if (!fHashed) {
+            hashCached = h;
+            fHashed = true;
+        }
+    }
+
+    uint256 GetHash() const
+    {
+        if (!fHashed) {
+            scrypt_hash(CVOIDBEGIN(nVersion), sizeof(block_header), UINTBEGIN(hashCached), GetNfactor(nTime));
+            fHashed = true;
+        }
+
+        return hashCached;
+    }
+
+    int64 GetBlockTime() const
+    {
+        return (int64)nTime;
+    }
+
+    bool IsNull() const
+    {
+        return (nBits == 0);
+    }
+};
 
 
 /** Nodes collect new transactions into a block, hash them into a hash tree,
@@ -830,17 +905,9 @@ public:
  * Blocks are appended to blk0001.dat files on disk.  Their location on disk
  * is indexed by CBlockIndex objects in memory.
  */
-class CBlock
+class CBlock : public CBlockHeader
 {
 public:
-    // header
-    static const int CURRENT_VERSION=8;
-    int nVersion;
-    uint256 hashPrevBlock;
-    uint256 hashMerkleRoot;
-    unsigned int nTime;
-    unsigned int nBits;
-    unsigned int nNonce;
 
     // network and disk
     std::vector<CTransaction> vtx;
@@ -857,6 +924,14 @@ public:
 
     CBlock()
     {
+        fHashed = false;
+        SetNull();
+    }
+
+    CBlock(const CBlockHeader &blockHeader)
+        : CBlockHeader(blockHeader)
+    {
+        fHashed = false;
         SetNull();
     }
 
@@ -885,12 +960,9 @@ public:
 
     void SetNull()
     {
-        nVersion = CBlock::CURRENT_VERSION;
-        hashPrevBlock = 0;
-        hashMerkleRoot = 0;
-        nTime = 0;
-        nBits = 0;
-        nNonce = 0;
+        fHashed = false;
+        CBlockHeader::SetNull();
+
         vtx.clear();
         vchBlockSig.clear();
         vMerkleTree.clear();
@@ -1119,10 +1191,9 @@ private:
  * to it, but pnext will only point forward to the longest branch, or will
  * be null if the block is not part of the longest chain.
  */
-class CBlockIndex
+class CBlockIndex : public CBlockHeader
 {
 public:
-    const uint256* phashBlock;
     CBlockIndex* pprev;
     CBlockIndex* pnext;
     unsigned int nFile;
@@ -1149,16 +1220,11 @@ public:
     unsigned int nStakeTime;
     uint256 hashProofOfStake;
 
-    // block header
-    int nVersion;
-    uint256 hashMerkleRoot;
-    unsigned int nTime;
-    unsigned int nBits;
-    unsigned int nNonce;
-
     CBlockIndex()
     {
-        phashBlock = NULL;
+        fHashed = false;
+        CBlockHeader::SetNull();
+
         pprev = NULL;
         pnext = NULL;
         nFile = 0;
@@ -1173,17 +1239,11 @@ public:
         hashProofOfStake = 0;
         prevoutStake.SetNull();
         nStakeTime = 0;
-
-        nVersion       = 0;
-        hashMerkleRoot = 0;
-        nTime          = 0;
-        nBits          = 0;
-        nNonce         = 0;
     }
 
     CBlockIndex(unsigned int nFileIn, unsigned int nBlockPosIn, CBlock& block)
+        : CBlockHeader(block)
     {
-        phashBlock = NULL;
         pprev = NULL;
         pnext = NULL;
         nFile = nFileIn;
@@ -1207,45 +1267,19 @@ public:
             prevoutStake.SetNull();
             nStakeTime = 0;
         }
-
-        nVersion       = block.nVersion;
-        hashMerkleRoot = block.hashMerkleRoot;
-        nTime          = block.nTime;
-        nBits          = block.nBits;
-        nNonce         = block.nNonce;
     }
 
-    CBlock GetBlockHeader() const
+    const CBlockHeader & GetBlockHeader() const
     {
-        CBlock block;
-        block.nVersion       = nVersion;
-        if (pprev)
-            block.hashPrevBlock = pprev->GetBlockHash();
-        block.hashMerkleRoot = hashMerkleRoot;
-        block.nTime          = nTime;
-        block.nBits          = nBits;
-        block.nNonce         = nNonce;
-        return block;
+        return *this;
     }
 
     uint256 GetBlockHash() const
     {
-        return *phashBlock;
+        return GetHash();
     }
 
-    int64 GetBlockTime() const
-    {
-        return (int64)nTime;
-    }
-
-    CBigNum GetBlockTrust() const
-    {
-        CBigNum bnTarget;
-        bnTarget.SetCompact(nBits);
-        if (bnTarget <= 0)
-            return 0;
-        return (IsProofOfStake()? (CBigNum(1)<<256) / (bnTarget+1) : 1);
-    }
+    CBigNum GetBlockTrust() const;
 
     bool IsInMainChain() const
     {
@@ -1363,6 +1397,7 @@ public:
 
     CDiskBlockIndex()
     {
+        fHashed = false;
         hashPrev = 0;
         hashNext = 0;
     }
@@ -1377,6 +1412,9 @@ public:
     (
         if (!(nType & SER_GETHASH))
             READWRITE(nVersion);
+
+        READWRITE(hashCached);
+        SetHash(hashCached); // sets the hash if reading from disk; does nothing if writing
 
         READWRITE(hashNext);
         READWRITE(nFile);
@@ -1410,14 +1448,7 @@ public:
 
     uint256 GetBlockHash() const
     {
-        CBlock block;
-        block.nVersion        = nVersion;
-        block.hashPrevBlock   = hashPrev;
-        block.hashMerkleRoot  = hashMerkleRoot;
-        block.nTime           = nTime;
-        block.nBits           = nBits;
-        block.nNonce          = nNonce;
-        return block.GetHash();
+        return GetHash();
     }
 
 
