@@ -28,6 +28,10 @@ class CNode;
 
 // block height where "no consecutive PoS blocks" rule activates
 static const int nConsecutiveStakeSwitchHeight = 370000;
+// timestamp where "constant Nfactor" rule activates
+static const int ConstantNfactorSwitchTime = 1393712303;
+// timestamp where "new PoS interest" rule activates
+static const int64 NewPoSInterestSwitchTime = 1393712303;
 
 static const unsigned int MAX_BLOCK_SIZE = 1000000;
 static const unsigned int MAX_BLOCK_SIZE_GEN = MAX_BLOCK_SIZE/2;
@@ -117,7 +121,7 @@ bool CheckWork(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey);
 bool CheckProofOfWork(uint256 hash, unsigned int nBits);
 //int64 GetProofOfWorkReward(unsigned int nBits);
 int64 GetProofOfWorkReward(unsigned int nBits, int nHeight=0, int64 nFees=0, uint256 prevHash=0);
-int64 GetProofOfStakeReward(int64 nCoinAge);
+int64 GetProofOfStakeReward(unsigned int nTime, int64 nCoinAge);
 unsigned int ComputeMinWork(unsigned int nBase, int64 nTime);
 int GetNumBlocksOfPeers();
 bool IsInitialBlockDownload();

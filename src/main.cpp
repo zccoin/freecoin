@@ -892,13 +892,6 @@ bool GetTransaction(const uint256 &hash, CTransaction &tx, uint256 &hashBlock)
     return false;
 }
 
-
-
-
-
-
-
-
 //////////////////////////////////////////////////////////////////////////////
 //
 // CBlock and CBlockIndex
@@ -959,33 +952,42 @@ uint256 WantedByOrphan(const CBlock* pblockOrphan)
 // freecoin: increasing Nfactor gradually
 const unsigned char minNfactor = 6;
 const unsigned char maxNfactor = 32;
+const unsigned char constNfactor = 4;
 
 unsigned char GetNfactor(int64 nTimestamp) {
-    int l = 0;
-    int n = 0;
-    if (nTimestamp <= nChainStartTime)
-        return minNfactor;
-    int64 s = nTimestamp - nChainStartTime;
-    while ((s >> 1) > 3) {
-      l += 1;
-      s >>= 1;
-    }
-    s &= 3;
-    /*n=l * 170 + s * 25 - 2320;
-    if(n<0)
+    if(nTimestamp>=ConstantNfactorSwitchTime)
     {
-        n=-1*n;
-        n=-1*(n/100);
+        return constNfactor;
     }
-    if(n>0)n=n/100;*/
-    n = (l * 170 + s * 25 - 2320) / 100;
-    if (n < 0) n = 0;
-    if (n > 255)
-        printf( "GetNfactor(%lld) - something wrong(n == %d)\n", nTimestamp, n );
-    unsigned char N = (unsigned char) n;
-    //printf("GetNfactor: %d -> %d %d : %d / %d\n", nTimestamp - nChainStartTime, l, s, n, min(max(N, minNfactor), maxNfactor));
+    //the original rule
+    else
+	{
+		int l = 0;
+		int n = 0;
+		if (nTimestamp <= nChainStartTime)
+			return minNfactor;
+		int64 s = nTimestamp - nChainStartTime;
+		while ((s >> 1) > 3) {
+		  l += 1;
+		  s >>= 1;
+		}
+		s &= 3;
+		/*n=l * 170 + s * 25 - 2320;
+		if(n<0)
+		{
+			n=-1*n;
+			n=-1*(n/100);
+		}
+		if(n>0)n=n/100;*/
+		n = (l * 170 + s * 25 - 2320) / 100;
+		if (n < 0) n = 0;
+		if (n > 255)
+			printf( "GetNfactor(%lld) - something wrong(n == %d)\n", nTimestamp, n );
+		unsigned char N = (unsigned char) n;
+		//printf("GetNfactor: %d -> %d %d : %d / %d\n", nTimestamp - nChainStartTime, l, s, n, min(max(N, minNfactor), maxNfactor));
 
-    return min(max(N, minNfactor), maxNfactor);
+		return min(max(N, minNfactor), maxNfactor);
+	}
 }
 
 // miner's coin base reward based on nBits
@@ -1050,14 +1052,24 @@ int64 GetProofOfWorkReward(unsigned int nBits, int nHeight, int64 nFees, uint256
 }
 
 // miner's coin stake reward based on nBits and coin age spent (coin-days)
-int64 GetProofOfStakeReward(int64 nCoinAge)
+int64 GetProofOfStakeReward(unsigned int nTime, int64 nCoinAge)
 {
-    static int64 nRewardCoinYear = 0.88 * CENT;  // creation amount per coin-year //0.88 annual interest
-
-    int64 nSubsidy = nCoinAge * 33 / (365 * 33 + 8) * nRewardCoinYear;
-    if (fDebug && GetBoolArg("-printcreation"))
-        printf("GetProofOfStakeReward(): create=%s nCoinAge=%"PRI64d"\n", FormatMoney(nSubsidy).c_str(), nCoinAge);
-    return nSubsidy;
+	int64 nRewardCoinYear;
+	
+	if(nTime>=NewPoSInterestSwitchTime)
+    {
+        nRewardCoinYear = 12 * CENT;  // creation amount per coin-year //12 annual interest
+    }
+    //the original rule
+    else
+	{
+		nRewardCoinYear = 0.88 * CENT;  // creation amount per coin-year //0.88 annual interest
+	}
+	
+	int64 nSubsidy = nCoinAge * 33 / (365 * 33 + 8) * nRewardCoinYear;
+	if (fDebug && GetBoolArg("-printcreation"))
+		printf("GetProofOfStakeReward(): create=%s nCoinAge=%"PRI64d"\n", FormatMoney(nSubsidy).c_str(), nCoinAge);
+	return nSubsidy;
 }
 
 static const int64 nTargetTimespan = 5 * 24 * 60 * 60;  // one week
@@ -1202,16 +1214,6 @@ void CBlock::UpdateTime(const CBlockIndex* pindexPrev)
 {
     nTime = max(GetBlockTime(), GetAdjustedTime());
 }
-
-
-
-
-
-
-
-
-
-
 
 bool CTransaction::DisconnectInputs(CTxDB& txdb)
 {
@@ -1454,7 +1456,7 @@ bool CTransaction::ConnectInputs(CTxDB& txdb, MapPrevTx inputs,
             if (!GetCoinAge(txdb, nCoinAge))
                 return error("ConnectInputs() : %s unable to get coin age for coinstake", GetHash().ToString().substr(0,10).c_str());
             int64 nStakeReward = GetValueOut() - nValueIn;
-            if (nStakeReward > GetProofOfStakeReward(nCoinAge) - GetMinFee() + MIN_TX_FEE)
+            if (nStakeReward > GetProofOfStakeReward(this->nTime, nCoinAge) - GetMinFee() + MIN_TX_FEE)
                 return DoS(100, error("ConnectInputs() : %s stake reward exceeded", GetHash().ToString().substr(0,10).c_str()));
         }
         else
